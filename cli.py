@@ -1,0 +1,222 @@
+"""
+cli.py
+───────
+Entry point for the Job Application AI System.
+
+Usage examples:
+
+  # Test with built-in fixture (no credentials needed)
+  python cli.py import --fixture
+
+  # Test with a custom fixture file
+  python cli.py import --fixture fixtures/sample_jobs.json
+
+  # Import from an existing Apify dataset
+  python cli.py import --dataset-id YOUR_DATASET_ID
+
+  # Trigger a saved Apify Task and import its results
+  python cli.py import --task-id YOUR_TASK_ID
+
+  # Dry-run any of the above (shows what would happen, writes nothing)
+  python cli.py import --fixture --dry-run
+  python cli.py import --dataset-id YOUR_DATASET_ID --dry-run
+
+  # Inspect the first N raw items from a source (helpful for field discovery)
+  python cli.py inspect --dataset-id YOUR_DATASET_ID --limit 3
+  python cli.py inspect --fixture --limit 2
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import sys
+from pathlib import Path
+
+import click
+
+# ── Logging setup ────────────────────────────────────────────────────────────
+# Configure before any project imports so all loggers pick up the handler.
+
+def _setup_logging(verbose: bool) -> None:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+    )
+
+
+# ── Default paths ─────────────────────────────────────────────────────────────
+_PROJECT_ROOT = Path(__file__).resolve().parent
+_DEFAULT_FIXTURE = _PROJECT_ROOT / "fixtures" / "sample_jobs.json"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI root group
+# ─────────────────────────────────────────────────────────────────────────────
+
+@click.group()
+@click.option("--verbose", "-v", is_flag=True, default=False,
+              help="Enable DEBUG-level logging.")
+@click.pass_context
+def cli(ctx: click.Context, verbose: bool) -> None:
+    """Job Application AI System – Phase 1: Import & Track."""
+    ctx.ensure_object(dict)
+    ctx.obj["verbose"] = verbose
+    _setup_logging(verbose)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# import command
+# ─────────────────────────────────────────────────────────────────────────────
+
+@cli.command("import")
+@click.option("--fixture", "use_fixture", is_flag=True, default=False,
+              help="Import from the local fixture file (no Apify credentials needed).")
+@click.option("--fixture-path", type=click.Path(exists=True, path_type=Path),
+              default=None,
+              help=f"Path to a custom fixture JSON (default: {_DEFAULT_FIXTURE}).")
+@click.option("--dataset-id", default=None,
+              help="Apify dataset ID to read (overrides APIFY_DATASET_ID in .env).")
+@click.option("--task-id", default=None,
+              help="Saved Apify Task ID to run and fetch (overrides APIFY_TASK_ID in .env).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show what would be imported without writing to Google Sheets.")
+@click.pass_context
+def import_jobs(
+    ctx: click.Context,
+    use_fixture: bool,
+    fixture_path: Path | None,
+    dataset_id: str | None,
+    task_id: str | None,
+    dry_run: bool,
+) -> None:
+    """
+    Fetch jobs from a source, normalize them, deduplicate, and write to Google Sheets.
+    """
+    from config.settings import get_settings
+    from src.job_app.pipeline import ImportPipeline
+    from src.job_app.sheets_client import SheetsClient
+
+    # Exactly one source must be specified
+    sources_given = sum([use_fixture, bool(dataset_id), bool(task_id)])
+    if sources_given == 0:
+        raise click.UsageError(
+            "Specify exactly one source: --fixture, --dataset-id, or --task-id.\n"
+            "Run 'python cli.py import --help' for details."
+        )
+    if sources_given > 1:
+        raise click.UsageError(
+            "Specify only one source at a time: --fixture, --dataset-id, or --task-id."
+        )
+
+    cfg = get_settings(dry_run=dry_run)
+
+    # In fixture mode we don't need Google creds when dry-running
+    sheets = SheetsClient(
+        service_account_json=cfg.google_service_account_json,
+        spreadsheet_id=cfg.google_spreadsheet_id,
+        worksheet_name=cfg.google_worksheet_name,
+        dry_run=dry_run,
+    )
+
+    pipeline = ImportPipeline(
+        sheets_client=sheets,
+        apify_token=cfg.apify_token if not use_fixture else "",
+        dry_run=dry_run,
+    )
+
+    if dry_run:
+        click.echo("⚠️  DRY RUN — nothing will be written to Google Sheets.\n")
+
+    if use_fixture:
+        path = fixture_path or _DEFAULT_FIXTURE
+        click.echo(f"📂 Source: fixture  →  {path}")
+        result = pipeline.run_from_fixture(path)
+    elif dataset_id:
+        resolved_id = dataset_id or cfg.apify_dataset_id
+        click.echo(f"☁️  Source: Apify dataset  →  {resolved_id}")
+        result = pipeline.run_from_dataset(resolved_id)
+    else:
+        resolved_task = task_id or cfg.apify_task_id
+        click.echo(f"⚙️  Source: Apify task  →  {resolved_task}")
+        result = pipeline.run_from_task(resolved_task)
+
+    # ── Print summary table ───────────────────────────────────
+    click.echo("")
+    click.echo("─" * 45)
+    click.echo("  Import Summary")
+    click.echo("─" * 45)
+    click.echo(f"  Fetched from source :  {result.total_fetched}")
+    click.echo(f"  Normalized          :  {result.total_normalized}")
+    click.echo(f"  Normalization fails :  {result.total_skipped}")
+    click.echo(f"  Duplicates skipped  :  {result.total_duplicates}")
+    click.echo(f"  New rows written    :  {result.total_new}")
+    if result.dry_run:
+        click.echo("  (DRY RUN — no actual writes)")
+    click.echo("─" * 45)
+
+    if result.total_new > 0 and not result.dry_run:
+        click.echo(f"\n✅  {result.total_new} job(s) added to your tracking sheet.")
+    elif result.total_new > 0 and result.dry_run:
+        click.echo(f"\n🔍  {result.total_new} job(s) would be added (dry run).")
+    elif result.total_duplicates == result.total_normalized:
+        click.echo("\nℹ️  All jobs already tracked — nothing new to add.")
+    else:
+        click.echo("\n⚠️  No new jobs were added. Check logs for details.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# inspect command  (field discovery helper)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@cli.command("inspect")
+@click.option("--fixture", "use_fixture", is_flag=True, default=False,
+              help="Inspect the local fixture file.")
+@click.option("--fixture-path", type=click.Path(exists=True, path_type=Path),
+              default=None, help="Custom fixture path.")
+@click.option("--dataset-id", default=None,
+              help="Apify dataset ID to inspect.")
+@click.option("--limit", default=2, show_default=True,
+              help="Number of items to print.")
+@click.pass_context
+def inspect_source(
+    ctx: click.Context,
+    use_fixture: bool,
+    fixture_path: Path | None,
+    dataset_id: str | None,
+    limit: int,
+) -> None:
+    """
+    Print raw items from a source to inspect actual field names and structure.
+    Useful before adding a new scraper or debugging normalization issues.
+    """
+    import json
+
+    if use_fixture:
+        path = fixture_path or _DEFAULT_FIXTURE
+        with path.open(encoding="utf-8") as fh:
+            items = json.load(fh)
+        click.echo(f"Fixture: {path}  ({len(items)} items total)\n")
+    elif dataset_id:
+        from config.settings import get_settings
+        from src.job_app.apify_client import ApifyJobClient
+        cfg = get_settings()
+        client = ApifyJobClient(cfg.apify_token)
+        items = client.read_dataset(dataset_id)
+        click.echo(f"Dataset {dataset_id}  ({len(items)} items total)\n")
+    else:
+        raise click.UsageError("Specify --fixture or --dataset-id.")
+
+    for i, item in enumerate(items[:limit], 1):
+        click.echo(f"── Item {i} ─────────────────────────────────────────")
+        click.echo(json.dumps(item, indent=2, ensure_ascii=False, default=str))
+        click.echo("")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    cli()

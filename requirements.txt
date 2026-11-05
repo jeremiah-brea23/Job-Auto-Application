@@ -1,0 +1,20 @@
+# ── Core runtime ─────────────────────────────────────────────
+python-dotenv==1.0.1        # load .env into os.environ
+requests==2.32.3            # HTTP calls to Apify REST API
+apify-client==3.4.0         # Official Apify Python client
+gspread==6.1.2              # Google Sheets read/write
+google-auth==2.29.0         # Service-account auth for gspread
+google-auth-oauthlib==1.2.0 # OAuth helpers (needed by google-auth)
+
+# ── CLI ───────────────────────────────────────────────────────
+click==8.1.7                # Command-line interface
+
+# ── Utilities ─────────────────────────────────────────────────
+python-dateutil==2.9.0.post0  # Flexible date parsing from job postings
+urllib3==2.2.1                # Pinned transitive dep of requests
+
+# ── Phase 2+ (commented out until needed) ────────────────────
+# openai==1.30.0            # AI fit assessment & cover letters
+# pypdf==4.2.0              # PDF résumé parsing
+# python-docx==1.1.2        # DOCX cover-letter generation
+# playwright==1.44.0        # Browser autofill (Phase 4)

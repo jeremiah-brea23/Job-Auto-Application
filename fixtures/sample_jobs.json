@@ -1,0 +1,117 @@
+[
+  {
+    "id": "3921847563",
+    "title": "Software Engineer Intern – Summer 2027",
+    "company": {
+      "name": "Stripe",
+      "url": "https://www.linkedin.com/company/stripe",
+      "logo": "https://media.licdn.com/dms/image/stripe-logo.png"
+    },
+    "location": "San Francisco, CA",
+    "workplace_type": "Hybrid",
+    "description": "Join Stripe's engineering team for a 12-week summer internship. You'll work on real products used by millions of businesses. Requirements: proficiency in at least one of Python, Ruby, Go, or Java; strong CS fundamentals; currently enrolled in a BS/MS program.",
+    "employment_type": "Internship",
+    "seniority_level": "Internship",
+    "url": "https://www.linkedin.com/jobs/view/3921847563",
+    "apply_url": "https://stripe.com/jobs/listing/123456",
+    "posted_at": "2026-10-28T12:00:00.000Z",
+    "listed_at": "2026-10-28T12:00:00.000Z",
+    "expiry": "2026-12-15T00:00:00.000Z",
+    "skills": ["Python", "Distributed Systems", "REST APIs"],
+    "industries": ["Financial Services", "Technology"],
+    "applicant_count": 312,
+    "easy_apply": false
+  },
+  {
+    "id": "3904712388",
+    "title": "Frontend Engineer Intern",
+    "company": {
+      "name": "Figma",
+      "url": "https://www.linkedin.com/company/figma",
+      "logo": null
+    },
+    "location": "New York, NY",
+    "workplace_type": "On-site",
+    "description": "Figma is hiring frontend interns to work on our web editor. You'll write TypeScript + React, collaborate with designers, and ship features used by millions. Requirements: strong JavaScript/TypeScript skills, familiarity with React or similar framework.",
+    "employment_type": "Internship",
+    "seniority_level": "Internship",
+    "url": "https://www.linkedin.com/jobs/view/3904712388",
+    "apply_url": "https://www.figma.com/careers/job/456789",
+    "posted_at": "2026-10-30T09:15:00.000Z",
+    "listed_at": "2026-10-30T09:15:00.000Z",
+    "expiry": null,
+    "skills": ["TypeScript", "React", "CSS", "WebGL"],
+    "industries": ["Design", "Software Development"],
+    "applicant_count": 528,
+    "easy_apply": false
+  },
+  {
+    "id": "3899345102",
+    "title": "Full Stack Developer Intern",
+    "company": {
+      "name": "Shopify",
+      "url": "https://www.linkedin.com/company/shopify",
+      "logo": "https://media.licdn.com/dms/image/shopify-logo.png"
+    },
+    "location": "Remote",
+    "workplace_type": "Remote",
+    "description": "Shopify's internship program runs May–August. You'll build features across our Ruby on Rails backend and React frontend. We look for strong problem-solving skills and experience with web technologies. Open to Canadian and US applicants.",
+    "employment_type": "Internship",
+    "seniority_level": "Internship",
+    "url": "https://www.linkedin.com/jobs/view/3899345102",
+    "apply_url": null,
+    "posted_at": "2026-11-01T08:00:00.000Z",
+    "listed_at": "2026-11-01T08:00:00.000Z",
+    "expiry": "2027-01-10T00:00:00.000Z",
+    "skills": ["Ruby on Rails", "React", "GraphQL", "MySQL"],
+    "industries": ["E-commerce", "Technology"],
+    "applicant_count": 891,
+    "easy_apply": true
+  },
+  {
+    "id": "3887621049",
+    "title": "iOS Software Engineering Intern",
+    "company": {
+      "name": "Apple",
+      "url": "https://www.linkedin.com/company/apple",
+      "logo": "https://media.licdn.com/dms/image/apple-logo.png"
+    },
+    "location": "Cupertino, CA",
+    "workplace_type": "On-site",
+    "description": "Work on Apple platforms including iPhone and iPad. You'll use Swift and Objective-C to build features shipped to hundreds of millions of devices. Must be enrolled in a CS or related degree. Relocation provided.",
+    "employment_type": "Internship",
+    "seniority_level": "Internship",
+    "url": "https://www.linkedin.com/jobs/view/3887621049",
+    "apply_url": "https://jobs.apple.com/en-us/details/200123456",
+    "posted_at": "2026-10-15T14:30:00.000Z",
+    "listed_at": "2026-10-15T14:30:00.000Z",
+    "expiry": null,
+    "skills": ["Swift", "Objective-C", "Xcode", "UIKit"],
+    "industries": ["Consumer Electronics", "Software Development"],
+    "applicant_count": 2104,
+    "easy_apply": false
+  },
+  {
+    "id": "3915503287",
+    "title": "Software Development Engineer Intern",
+    "company": {
+      "name": "Amazon",
+      "url": "https://www.linkedin.com/company/amazon",
+      "logo": null
+    },
+    "location": "Seattle, WA",
+    "workplace_type": "Hybrid",
+    "description": "Amazon SDE internships span 12 weeks. You will design, build, and own a project end-to-end. Strong data structures, algorithms, and system design skills required. Must be graduating between December 2027 and June 2028.",
+    "employment_type": "Internship",
+    "seniority_level": "Internship",
+    "url": "https://www.linkedin.com/jobs/view/3915503287",
+    "apply_url": "https://amazon.jobs/en/jobs/2345678",
+    "posted_at": "2026-11-03T10:00:00.000Z",
+    "listed_at": "2026-11-03T10:00:00.000Z",
+    "expiry": "2027-02-01T00:00:00.000Z",
+    "skills": ["Java", "Data Structures", "System Design", "AWS"],
+    "industries": ["Cloud Computing", "E-commerce"],
+    "applicant_count": 4720,
+    "easy_apply": false
+  }
+]
