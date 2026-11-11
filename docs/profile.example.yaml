@@ -1,0 +1,138 @@
+# ─────────────────────────────────────────────────────────────
+# profile/profile.yaml
+# Your personal preferences and criteria for job fit assessment.
+# Edit this file — the assessor reads it at runtime.
+# ─────────────────────────────────────────────────────────────
+
+# ── Target roles ─────────────────────────────────────────────
+target_roles:
+  - Software Engineering Intern
+  - Frontend Engineer Intern
+  - Full Stack Engineer Intern
+  - Software Developer Intern
+  - Web Developer Intern
+
+# Keywords in a title that signal a good match (case-insensitive)
+title_keywords_good:
+  - intern
+  - internship
+  - co-op
+  - coop
+  - software
+  - frontend
+  - front-end
+  - full stack
+  - fullstack
+  - web developer
+
+# Keywords in a title that disqualify immediately (case-insensitive)
+title_keywords_bad:
+  - senior
+  - staff
+  - principal
+  - director
+  - manager
+  - lead
+  - head of
+  - vp
+  - vice president
+  - recruiter
+  - headhunter
+  - sales
+  - marketing
+  - hr
+  - human resources
+  - data entry
+  - customer success
+  - account executive
+
+# ── Location preferences ──────────────────────────────────────
+# Accepted work arrangements (Remote / Hybrid / On-site / Any)
+preferred_workplace_types:
+  - Remote
+  - Hybrid
+
+# If On-site or Hybrid, accepted cities/regions (empty = any)
+accepted_locations:
+  - Remote
+  - New York
+  - San Francisco
+  - Seattle
+  - Austin
+  - Boston
+  - Chicago
+  - United States
+
+# ── Employment type ───────────────────────────────────────────
+preferred_employment_types:
+  - Internship
+  - Contract        # acceptable if internship-like
+  - Part-time       # acceptable if it is a fellowship/internship
+
+# Reject full-time roles? (true = skip them, false = flag for review)
+reject_fulltime: false
+
+# ── Availability ──────────────────────────────────────────────
+available_from: "2027-05-01"      # earliest start date
+available_until: "2027-08-31"     # latest end date (summer internship window)
+min_duration_weeks: 8
+max_duration_weeks: 16
+
+# ── Experience level ──────────────────────────────────────────
+# Seniority levels that are acceptable
+accepted_seniority_levels:
+  - Internship
+  - Entry level
+  - ""              # blank = not specified, treat as potentially ok
+
+# ── Skills I have ────────────────────────────────────────────
+# Used to match against job requirements and compute skill overlap
+my_skills:
+  languages:
+    - Python
+    - JavaScript
+    - TypeScript
+    - HTML
+    - CSS
+    - SQL
+  frameworks:
+    - React
+    - Node.js
+    - Express
+  tools:
+    - Git
+    - GitHub
+    - VS Code
+    - Linux
+  concepts:
+    - REST APIs
+    - Data Structures
+    - Algorithms
+    - Object-Oriented Programming
+
+# ── Deal-breakers ─────────────────────────────────────────────
+# If ANY of these appear in the description, mark as Needs Review
+description_red_flags:
+  - "no experience required"
+  - "referral fee"
+  - "success fee"
+  - "commission only"
+  - "unpaid"
+  - "pyramid"
+  - "mlm"
+  - "must have 3+ years"
+  - "must have 5+ years"
+  - "requires security clearance"
+
+# ── Work authorization ────────────────────────────────────────
+authorized_to_work_in_us: true
+requires_sponsorship: false       # set true if you need visa sponsorship
+
+# ── Résumé file ───────────────────────────────────────────────
+# Path relative to project root. Place your actual résumé here.
+resume_path: resumes/resume.pdf   # or resume.docx / resume.txt
+
+# ── AI assessment ────────────────────────────────────────────
+# Use AI for jobs that pass rule-based checks but need interpretation
+use_ai_assessment: true
+ai_assessment_model: gpt-4o-mini  # overrides AI_MODEL in .env if set

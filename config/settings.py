@@ -63,11 +63,12 @@ class Settings:
             "credentials/google_service_account.json",
         )
         return cls(
-            apify_token=_require("APIFY_TOKEN"),
+            # Optional at load time — the client will raise if actually needed
+            apify_token=_optional("APIFY_TOKEN"),
             apify_dataset_id=_optional("APIFY_DATASET_ID"),
             apify_task_id=_optional("APIFY_TASK_ID"),
             google_service_account_json=service_account_path,
-            google_spreadsheet_id=_require("GOOGLE_SPREADSHEET_ID"),
+            google_spreadsheet_id=_optional("GOOGLE_SPREADSHEET_ID"),
             google_worksheet_name=_optional("GOOGLE_WORKSHEET_NAME", "Jobs"),
             ai_api_key=_optional("AI_API_KEY"),
             ai_model=_optional("AI_MODEL", "gpt-4o-mini"),
