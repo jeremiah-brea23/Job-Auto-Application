@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 import gspread
+from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
 
 from src.job_app.normalizer import JobRecord
@@ -206,6 +207,28 @@ class SheetsClient:
 
         self._ws.update_cell(row_number, col_index, value)
 
+    def update_row_fields(self, row_number: int, fields: dict[str, str]) -> None:
+        """
+        Update multiple cells in a single row.
+        Each field is written with backoff to handle Sheets rate limits.
+        fields: {column_name: value}
+        """
+        if self._dry_run:
+            for field_name, value in fields.items():
+                col_index = SHEET_COLUMNS.index(field_name) + 1
+                logger.info(
+                    "[DRY RUN] Would update row %d, col %s (%s) → %r",
+                    row_number, field_name, _col_letter(col_index), value,
+                )
+            return
+
+        for field_name, value in fields.items():
+            if field_name not in SHEET_COLUMNS:
+                raise ValueError(f"Unknown column: {field_name!r}")
+            col_index = SHEET_COLUMNS.index(field_name) + 1
+            cell_addr = f"{_col_letter(col_index)}{row_number}"
+            _write_with_backoff(self._ws, cell_addr, value)
+
     # ─────────────────────────────────────────────────────────
     # Internal helpers
     # ─────────────────────────────────────────────────────────
@@ -282,3 +305,30 @@ def _col_letter(n: int) -> str:
         n, remainder = divmod(n - 1, 26)
         result = chr(65 + remainder) + result
     return result
+
+
+def _write_with_backoff(
+    ws: gspread.Worksheet,
+    cell_addr: str,
+    value: str,
+    max_retries: int = 5,
+) -> None:
+    """
+    Write a single cell with exponential backoff on 429 rate-limit errors.
+    Waits 15s, 30s, 60s, 120s before giving up.
+    """
+    delay = 15
+    for attempt in range(max_retries):
+        try:
+            ws.update(cell_addr, [[value]], value_input_option="RAW")
+            return
+        except APIError as exc:
+            if "429" in str(exc) and attempt < max_retries - 1:
+                logger.warning(
+                    "Rate limited writing %s — waiting %ds before retry %d/%d …",
+                    cell_addr, delay, attempt + 1, max_retries - 1,
+                )
+                time.sleep(delay)
+                delay = min(delay * 2, 120)
+            else:
+                raise

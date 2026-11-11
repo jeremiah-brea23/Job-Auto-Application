@@ -5,6 +5,7 @@ apify-client==3.4.0         # Official Apify Python client
 gspread==6.1.2              # Google Sheets read/write
 google-auth==2.29.0         # Service-account auth for gspread
 google-auth-oauthlib==1.2.0 # OAuth helpers (needed by google-auth)
+pyyaml==6.0.2               # Profile config loading
 
 # ── CLI ───────────────────────────────────────────────────────
 click==8.1.7                # Command-line interface

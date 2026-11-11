@@ -169,6 +169,110 @@ def import_jobs(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# assess command
+# ─────────────────────────────────────────────────────────────────────────────
+
+@cli.command("assess")
+@click.option("--profile-path", type=click.Path(path_type=Path),
+              default=None,
+              help="Path to profile YAML (default: profile/profile.yaml).")
+@click.option("--resume-path", type=click.Path(path_type=Path),
+              default=None,
+              help="Path to résumé file (PDF/DOCX/TXT). Skips AI context if omitted.")
+@click.option("--limit", default=None, type=int,
+              help="Max number of jobs to assess in this run.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show assessment results without writing back to the sheet.")
+@click.option("--rules-only", is_flag=True, default=False,
+              help="Skip AI assessment and use rule-based scoring only.")
+@click.pass_context
+def assess_jobs(
+    ctx: click.Context,
+    profile_path: Path | None,
+    resume_path: Path | None,
+    limit: int | None,
+    dry_run: bool,
+    rules_only: bool,
+) -> None:
+    """
+    Assess unscored jobs in the sheet for fit against your profile.
+    Writes fit_score, fit_reason, missing_requirements, and application_status.
+    """
+    from config.settings import get_settings
+    from src.job_app.pipeline import ImportPipeline
+    from src.job_app.sheets_client import SheetsClient
+
+    cfg = get_settings(dry_run=dry_run)
+
+    resolved_profile = profile_path or (_PROJECT_ROOT / "profile" / "profile.yaml")
+    resolved_resume = resume_path or (_PROJECT_ROOT / cfg.resume_path
+                                      if hasattr(cfg, "resume_path") else None)
+
+    # Load profile to find resume_path if not explicitly given
+    if not resolved_resume:
+        try:
+            import yaml
+            with open(resolved_profile, encoding="utf-8") as fh:
+                p = yaml.safe_load(fh)
+            resolved_resume = _PROJECT_ROOT / p.get("resume_path", "resumes/resume.pdf")
+        except Exception:
+            pass
+
+    sheets = SheetsClient(
+        service_account_json=cfg.google_service_account_json,
+        spreadsheet_id=cfg.google_spreadsheet_id,
+        worksheet_name=cfg.google_worksheet_name,
+        dry_run=dry_run,
+    )
+
+    pipeline = ImportPipeline(
+        sheets_client=sheets,
+        apify_token=cfg.apify_token,
+        dry_run=dry_run,
+    )
+
+    ai_key = "" if rules_only else cfg.ai_api_key
+
+    if dry_run:
+        click.echo("⚠️  DRY RUN — scores will not be written to Google Sheets.\n")
+    if rules_only or not ai_key:
+        click.echo("ℹ️  Running rules-only assessment (no AI).\n")
+    else:
+        click.echo(f"🤖 AI assessment enabled (model: {cfg.ai_model}).\n")
+
+    click.echo(f"📋 Profile: {resolved_profile}")
+    if resolved_resume and Path(resolved_resume).exists():
+        click.echo(f"📄 Résumé:  {resolved_resume}")
+    else:
+        click.echo("📄 Résumé:  not found — AI will run without résumé context")
+    click.echo("")
+
+    result = pipeline.run_assessment(
+        profile_path=resolved_profile,
+        resume_path=Path(resolved_resume) if resolved_resume else None,
+        ai_api_key=ai_key,
+        ai_model=cfg.ai_model,
+        limit=limit,
+    )
+
+    click.echo("")
+    click.echo("─" * 45)
+    click.echo("  Assessment Summary")
+    click.echo("─" * 45)
+    click.echo(f"  Total rows in sheet  :  {result.total_rows}")
+    click.echo(f"  Already assessed     :  {result.already_assessed}")
+    click.echo(f"  Assessed this run    :  {result.assessed_now}")
+    click.echo(f"  ── Scores ──────────────────────────────")
+    click.echo(f"  Good                 :  {result.score_breakdown.get('Good', 0)}")
+    click.echo(f"  Maybe                :  {result.score_breakdown.get('Maybe', 0)}")
+    click.echo(f"  Needs Review         :  {result.score_breakdown.get('Needs Review', 0)}")
+    click.echo(f"  Skip                 :  {result.score_breakdown.get('Skip', 0)}")
+    if result.dry_run:
+        click.echo("  (DRY RUN — no actual writes)")
+    click.echo("─" * 45)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # inspect command  (field discovery helper)
 # ─────────────────────────────────────────────────────────────────────────────
 

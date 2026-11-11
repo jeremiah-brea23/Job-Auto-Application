@@ -93,22 +93,22 @@ def _build_record(raw: dict[str, Any], source: str) -> JobRecord:
     job_id = _get_job_id(raw)
     title = _str(raw, "title", "jobTitle", "job_title", "name") or "Unknown Title"
     company = _get_company_name(raw)
-    location = _str(raw, "location", "jobLocation", "city", "formattedLocation") or ""
-    description = _str(raw, "description", "jobDescription", "descriptionHtml") or ""
+    location = _str(raw, "location", "formattedLocation", "jobLocation", "city") or ""
+    description = _str(raw, "descriptionText", "description", "jobDescription",
+                        "descriptionHtml") or ""
     posting_url = _get_posting_url(raw, job_id)
-    apply_url = _str(raw, "apply_url", "applyUrl", "externalApplyLink",
+    apply_url = _str(raw, "applyUrl", "apply_url", "externalApplyLink",
                      "applicationUrl", "applyLink") or ""
     posted_date = _parse_date(
-        _str(raw, "posted_at", "postedAt", "listedAt", "listed_at",
+        _str(raw, "postedAt", "posted_at", "listedAt", "listed_at",
              "publishedAt", "datePosted")
     )
-    workplace_type = _str(raw, "workplace_type", "workplaceType",
-                          "workType", "remote") or ""
-    employment_type = _str(raw, "employment_type", "employmentType",
-                           "jobType", "type") or ""
-    seniority_level = _str(raw, "seniority_level", "seniorityLevel",
-                           "experienceLevel") or ""
-    easy_apply = bool(raw.get("easy_apply") or raw.get("easyApply") or False)
+    workplace_type = _get_workplace_type(raw)
+    employment_type = _str(raw, "formattedEmploymentStatus", "employmentStatus",
+                           "employment_type", "employmentType", "jobType") or ""
+    seniority_level = _str(raw, "formattedExperienceLevel", "seniority_level",
+                           "seniorityLevel", "experienceLevel") or ""
+    easy_apply = bool(raw.get("easyApply") or raw.get("easy_apply") or False)
     skills = _get_skills(raw)
 
     if not job_id and not title:
@@ -142,7 +142,7 @@ def _get_job_id(raw: dict[str, Any]) -> str:
             return str(val).strip()
 
     # Fall back: extract numeric ID from the LinkedIn posting URL
-    url = raw.get("url") or raw.get("jobUrl") or raw.get("link") or ""
+    url = raw.get("link") or raw.get("url") or raw.get("jobUrl") or ""
     match = re.search(r"/jobs/view/(\d+)", str(url))
     if match:
         return match.group(1)
@@ -151,21 +151,40 @@ def _get_job_id(raw: dict[str, Any]) -> str:
 
 
 def _get_company_name(raw: dict[str, Any]) -> str:
-    """Company may be a nested dict {name, url} or a plain string."""
-    company = raw.get("company") or raw.get("companyName") or raw.get("company_name") or ""
+    """Company may be a nested dict {name, url} or a plain string field."""
+    # Real scraper uses flat companyName field
+    flat = raw.get("companyName") or raw.get("company_name") or ""
+    if flat and isinstance(flat, str):
+        return flat.strip()
+    # Fixture uses nested company dict
+    company = raw.get("company") or ""
     if isinstance(company, dict):
         return str(company.get("name") or "").strip()
-    return str(company).strip()
+    if isinstance(company, str):
+        return company.strip()
+    return ""
 
 
 def _get_posting_url(raw: dict[str, Any], job_id: str) -> str:
     """Return a normalised posting URL."""
-    url = _str(raw, "url", "jobUrl", "link", "postingUrl", "job_url") or ""
+    # Real scraper uses 'link'; fixture uses 'url'
+    url = _str(raw, "link", "url", "jobUrl", "postingUrl", "job_url") or ""
     if url:
         return _normalize_url(url)
     if job_id:
         return f"https://www.linkedin.com/jobs/view/{job_id}"
     return ""
+
+
+def _get_workplace_type(raw: dict[str, Any]) -> str:
+    """
+    Real scraper returns workplaceTypes as a list e.g. ["Remote"].
+    Fixture uses a plain string workplace_type.
+    """
+    types = raw.get("workplaceTypes")
+    if isinstance(types, list) and types:
+        return ", ".join(str(t) for t in types)
+    return _str(raw, "workplace_type", "workplaceType", "workType") or ""
 
 
 def _get_skills(raw: dict[str, Any]) -> list[str]:
