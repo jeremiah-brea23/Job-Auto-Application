@@ -326,17 +326,24 @@ def cover_letters_cmd(
 
     resolved_profile = profile_path or (_PROJECT_ROOT / "profile" / "profile.yaml")
 
-    # Load resume_path from profile if not explicitly given
-    if not resume_path:
+    # Load resume_path and base_cover_letter_path from profile if not explicitly given
+    if not resume_path or not base_letter:
         try:
             import yaml
             with open(resolved_profile, encoding="utf-8") as fh:
                 p_data = yaml.safe_load(fh)
-            resume_path = _PROJECT_ROOT / p_data.get("resume_path", "resumes/resume.pdf")
+            if not resume_path:
+                resume_path = _PROJECT_ROOT / p_data.get("resume_path", "resumes/resume.pdf")
+            if not base_letter:
+                resolved_base = _PROJECT_ROOT / p_data.get(
+                    "base_cover_letter_path",
+                    "cover_letters/base_cover_letter.txt"
+                )
         except Exception:
             pass
 
-    resolved_base = base_letter or (_PROJECT_ROOT / "cover_letters" / "base_cover_letter.txt")
+    if not resolved_base:
+        resolved_base = base_letter or (_PROJECT_ROOT / "cover_letters" / "base_cover_letter.txt")
     resolved_output = output_dir or (_PROJECT_ROOT / "cover_letters" / "generated")
     resolved_drive_folder = drive_folder_id or os.getenv("GOOGLE_DRIVE_FOLDER_ID", "")
 
