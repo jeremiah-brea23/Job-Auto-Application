@@ -1,23 +1,21 @@
 """
 src/job_app/pipeline.py
 ────────────────────────
-Orchestrates the full import + assessment flow:
+Orchestrates the full import + assessment + cover letter flow:
 
   Phase 1 — Import
-    source (Apify dataset OR local JSON fixture)
-      → normalize raw items into JobRecords
-      → deduplicate against existing sheet rows
-      → append new records to Google Sheets
+    source → normalize → deduplicate → append to Google Sheets
 
   Phase 2 — Assess
-    Read unassessed rows from the sheet
-      → run rule-based + optional AI fit assessment
-      → write fit_score, fit_reason, missing_requirements, application_status back
+    Unscored rows → rule-based + optional AI → write scores back
 
-Both phases are re-runnable safely:
-  - No row is written twice (dedup prevents it).
-  - Assess only targets rows where fit_score is still empty.
-  - dry_run=True shows what would happen without writing anything.
+  Phase 3 — Cover Letters
+    Ready/Maybe rows → detect requirement from description
+                     → generate tailored letter (AI)
+                     → save locally + upload to Google Drive
+                     → write cover_letter_required + link to sheet
+
+All phases are re-runnable safely (idempotent).
 """
 
 from __future__ import annotations
@@ -45,6 +43,18 @@ class ImportResult:
     total_skipped: int
     total_duplicates: int
     total_new: int
+    dry_run: bool
+
+
+@dataclass
+class CoverLetterRunResult:
+    """Summary returned after a cover letter generation run."""
+    total_eligible: int        # Ready/Maybe rows with no letter yet
+    already_have_letter: int   # Rows that already had a link
+    detection_only: int        # Rows where requirement was detected but no letter generated
+    generated: int             # Letters successfully generated
+    uploaded: int              # Letters uploaded to Drive
+    flagged_for_review: int    # Unknown requirement → flagged
     dry_run: bool
 
 
@@ -225,6 +235,217 @@ class ImportPipeline:
         return result_summary
 
     # ─────────────────────────────────────────────────────────
+    # Phase 3: Cover letter generation
+    # ─────────────────────────────────────────────────────────
+
+    def run_cover_letters(
+        self,
+        profile_path: Path,
+        resume_path: Path,
+        base_letter_path: Path,
+        output_dir: Path,
+        ai_api_key: str,
+        ai_model: str,
+        candidate_name: str = "",
+        service_account_json: Path | None = None,
+        drive_folder_id: str = "",
+        produce_docx: bool = False,
+        statuses_to_process: list[str] | None = None,
+        limit: int | None = None,
+    ) -> CoverLetterRunResult:
+        """
+        For every eligible row in the sheet:
+          1. Detect cover letter requirement from the description snippet.
+          2. Write the detection result to cover_letter_required if empty.
+          3. If required (or optional and generate_for_optional=True):
+             - Generate a tailored cover letter via AI.
+             - Save locally.
+             - Upload to Google Drive if credentials are available.
+             - Write the Drive link to cover_letter_link in the sheet.
+          4. If unknown: flag the row (set cover_letter_required = "unknown").
+
+        Eligible rows: application_status in statuses_to_process and
+                       cover_letter_link is empty.
+
+        Args:
+            statuses_to_process: Statuses to include. Default: ["Ready", "Maybe"].
+        """
+        from src.job_app.profile_loader import load_profile
+        from src.job_app.resume_parser import parse_resume
+        from src.job_app.cover_letter_detector import detect_cover_letter_requirement
+        from src.job_app.cover_letter_generator import CoverLetterGenerator
+
+        if statuses_to_process is None:
+            statuses_to_process = ["Ready", "Maybe"]
+
+        profile = load_profile(profile_path)
+
+        # Parse résumé
+        resume_text = ""
+        if resume_path and resume_path.exists():
+            try:
+                resume_text = parse_resume(resume_path)
+                logger.info("Résumé loaded: %d characters", len(resume_text))
+            except Exception as exc:
+                logger.warning("Could not parse résumé: %s", exc)
+
+        # Build generator (requires AI key)
+        generator: CoverLetterGenerator | None = None
+        if ai_api_key:
+            try:
+                generator = CoverLetterGenerator(
+                    profile=profile,
+                    resume_text=resume_text,
+                    base_letter_path=base_letter_path,
+                    output_dir=output_dir,
+                    ai_api_key=ai_api_key,
+                    ai_model=ai_model,
+                    candidate_name=candidate_name,
+                )
+            except Exception as exc:
+                logger.warning("Could not init cover letter generator: %s", exc)
+
+        # Build Drive client (optional)
+        from src.job_app.drive_client import DriveClient
+        drive: DriveClient | None = None
+        if service_account_json and service_account_json.exists():
+            try:
+                drive = DriveClient(service_account_json, folder_id=drive_folder_id)
+            except Exception as exc:
+                logger.warning("Could not init Drive client: %s — letters won't be uploaded", exc)
+
+        # Read sheet rows
+        self._sheets.ensure_header()
+        all_rows = self._sheets.read_all_rows()
+
+        eligible: list[tuple[int, dict[str, str]]] = []
+        already_have_letter = 0
+        for i, row in enumerate(all_rows):
+            status = row.get("application_status", "").strip()
+            if status not in statuses_to_process:
+                continue
+            if row.get("cover_letter_link", "").strip():
+                already_have_letter += 1
+                continue
+            sheet_row = i + 2
+            eligible.append((sheet_row, row))
+
+        logger.info(
+            "Cover letter run: %d eligible rows, %d already have a link",
+            len(eligible), already_have_letter,
+        )
+
+        if limit:
+            eligible = eligible[:limit]
+
+        generated = 0
+        uploaded = 0
+        flagged = 0
+        detection_only = 0
+
+        for sheet_row, row in eligible:
+            # Reconstruct JobRecord from row
+            record = _row_to_job_record(row)
+            if not record:
+                continue
+
+            # ── Step 1: Detect requirement ────────────────────
+            current_cl_req = row.get("cover_letter_required", "").strip()
+            if not current_cl_req:
+                requirement = detect_cover_letter_requirement(record.description)
+            else:
+                requirement = current_cl_req
+
+            if self._dry_run:
+                logger.info(
+                    "[DRY RUN] Row %d: %s @ %s — cover letter: %s",
+                    sheet_row, record.title, record.company, requirement,
+                )
+                if requirement == "unknown":
+                    flagged += 1
+                else:
+                    detection_only += 1
+                continue
+
+            # Write detection result if not already set
+            if not current_cl_req:
+                self._sheets.update_row_fields(sheet_row, {
+                    "cover_letter_required": requirement,
+                })
+                time.sleep(2.0)
+
+            # ── Step 2: Handle unknown → flag for review ──────
+            if requirement == "unknown":
+                # Update status to Needs Review so it surfaces for manual check
+                self._sheets.update_row_fields(sheet_row, {
+                    "notes": "Cover letter requirement unknown — verify application form",
+                })
+                time.sleep(2.0)
+                flagged += 1
+                logger.info(
+                    "Row %d flagged for review (unknown CL requirement): %s @ %s",
+                    sheet_row, record.title, record.company,
+                )
+                continue
+
+            # ── Step 3: Generate letter if requirement is known ─
+            if generator is None:
+                logger.warning(
+                    "AI key not set — cannot generate letter for row %d. "
+                    "Set AI_API_KEY in .env.", sheet_row,
+                )
+                detection_only += 1
+                continue
+
+            try:
+                cl_result = generator.generate(record, produce_docx=produce_docx)
+                generated += 1
+                logger.info("Generated letter for row %d: %s", sheet_row, record.title)
+            except Exception as exc:
+                logger.error("Failed to generate letter for row %d: %s", sheet_row, exc)
+                self._sheets.update_row_fields(sheet_row, {
+                    "notes": f"Cover letter generation failed: {exc}",
+                })
+                time.sleep(2.0)
+                continue
+
+            # ── Step 4: Upload to Drive ────────────────────────
+            drive_link = ""
+            if drive:
+                try:
+                    # Upload as Google Doc (editable, shareable)
+                    drive_link = drive.upload_txt_as_doc(cl_result.txt_path)
+                    uploaded += 1
+                except Exception as exc:
+                    logger.warning(
+                        "Drive upload failed for row %d: %s — link will be local path",
+                        sheet_row, exc,
+                    )
+                    drive_link = str(cl_result.txt_path)
+            else:
+                # Store local path as fallback
+                drive_link = str(cl_result.txt_path)
+
+            # ── Step 5: Write link back to sheet ──────────────
+            self._sheets.update_row_fields(sheet_row, {
+                "cover_letter_link": drive_link,
+            })
+            time.sleep(2.0)
+            logger.info("Row %d: cover letter link written → %s", sheet_row, drive_link[:60])
+
+        summary = CoverLetterRunResult(
+            total_eligible=len(eligible),
+            already_have_letter=already_have_letter,
+            detection_only=detection_only,
+            generated=generated,
+            uploaded=uploaded,
+            flagged_for_review=flagged,
+            dry_run=self._dry_run,
+        )
+        self._log_cl_summary(summary)
+        return summary
+
+    # ─────────────────────────────────────────────────────────
     # Core import pipeline
     # ─────────────────────────────────────────────────────────
 
@@ -295,6 +516,15 @@ class ImportPipeline:
             r.score_breakdown.get("Maybe", 0),
             r.score_breakdown.get("Skip", 0),
             r.score_breakdown.get("Needs Review", 0),
+        )
+
+    def _log_cl_summary(self, r: CoverLetterRunResult) -> None:
+        mode = "[DRY RUN] " if r.dry_run else ""
+        logger.info(
+            "%sCover letters — eligible: %d | already had link: %d | "
+            "generated: %d | uploaded: %d | detection only: %d | flagged: %d",
+            mode, r.total_eligible, r.already_have_letter,
+            r.generated, r.uploaded, r.detection_only, r.flagged_for_review,
         )
 
 

@@ -34,6 +34,7 @@ import sys
 from pathlib import Path
 
 import click
+import os
 
 # ── Logging setup ────────────────────────────────────────────────────────────
 # Configure before any project imports so all loggers pick up the handler.
@@ -267,6 +268,131 @@ def assess_jobs(
     click.echo(f"  Maybe                :  {result.score_breakdown.get('Maybe', 0)}")
     click.echo(f"  Needs Review         :  {result.score_breakdown.get('Needs Review', 0)}")
     click.echo(f"  Skip                 :  {result.score_breakdown.get('Skip', 0)}")
+    if result.dry_run:
+        click.echo("  (DRY RUN — no actual writes)")
+    click.echo("─" * 45)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# cover-letters command
+# ─────────────────────────────────────────────────────────────────────────────
+
+@cli.command("cover-letters")
+@click.option("--profile-path", type=click.Path(path_type=Path), default=None,
+              help="Path to profile YAML (default: profile/profile.yaml).")
+@click.option("--resume-path", type=click.Path(path_type=Path), default=None,
+              help="Path to résumé file. Reads from profile.yaml if not set.")
+@click.option("--base-letter", type=click.Path(path_type=Path), default=None,
+              help="Path to base cover letter (default: cover_letters/base_cover_letter.txt).")
+@click.option("--output-dir", type=click.Path(path_type=Path), default=None,
+              help="Directory to save generated letters (default: cover_letters/generated).")
+@click.option("--drive-folder-id", default=None,
+              help="Google Drive folder ID to upload letters into.")
+@click.option("--docx", "produce_docx", is_flag=True, default=False,
+              help="Also produce a .docx file for each letter.")
+@click.option("--detect-only", is_flag=True, default=False,
+              help="Only detect cover letter requirements — do not generate letters.")
+@click.option("--limit", default=None, type=int,
+              help="Max number of jobs to process in this run.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show what would happen without writing anything.")
+@click.option("--name", "candidate_name", default="",
+              help="Your full name for the letter sign-off.")
+@click.pass_context
+def cover_letters_cmd(
+    ctx: click.Context,
+    profile_path: Path | None,
+    resume_path: Path | None,
+    base_letter: Path | None,
+    output_dir: Path | None,
+    drive_folder_id: str | None,
+    produce_docx: bool,
+    detect_only: bool,
+    limit: int | None,
+    dry_run: bool,
+    candidate_name: str,
+) -> None:
+    """
+    Detect cover letter requirements and generate tailored letters for eligible jobs.
+
+    Eligible jobs: application_status is Ready or Maybe, and no letter exists yet.
+    Requires AI_API_KEY in .env for generation (detection works without it).
+    """
+    from config.settings import get_settings
+    from src.job_app.pipeline import ImportPipeline
+    from src.job_app.sheets_client import SheetsClient
+
+    cfg = get_settings(dry_run=dry_run)
+
+    resolved_profile = profile_path or (_PROJECT_ROOT / "profile" / "profile.yaml")
+
+    # Load resume_path from profile if not explicitly given
+    if not resume_path:
+        try:
+            import yaml
+            with open(resolved_profile, encoding="utf-8") as fh:
+                p_data = yaml.safe_load(fh)
+            resume_path = _PROJECT_ROOT / p_data.get("resume_path", "resumes/resume.pdf")
+        except Exception:
+            pass
+
+    resolved_base = base_letter or (_PROJECT_ROOT / "cover_letters" / "base_cover_letter.txt")
+    resolved_output = output_dir or (_PROJECT_ROOT / "cover_letters" / "generated")
+    resolved_drive_folder = drive_folder_id or os.getenv("GOOGLE_DRIVE_FOLDER_ID", "")
+
+    sheets = SheetsClient(
+        service_account_json=cfg.google_service_account_json,
+        spreadsheet_id=cfg.google_spreadsheet_id,
+        worksheet_name=cfg.google_worksheet_name,
+        dry_run=dry_run,
+    )
+
+    pipeline = ImportPipeline(
+        sheets_client=sheets,
+        apify_token=cfg.apify_token,
+        dry_run=dry_run,
+    )
+
+    ai_key = "" if detect_only else cfg.ai_api_key
+
+    if dry_run:
+        click.echo("⚠️  DRY RUN — nothing will be written.\n")
+    if detect_only:
+        click.echo("🔍  Detection only — letters will not be generated.\n")
+    elif not ai_key:
+        click.echo("⚠️  AI_API_KEY not set — running detection only.\n")
+        click.echo("    Set AI_API_KEY in .env to enable letter generation.\n")
+
+    click.echo(f"📋 Profile : {resolved_profile}")
+    click.echo(f"📄 Résumé  : {resume_path}")
+    click.echo(f"✉️  Base    : {resolved_base}")
+    click.echo(f"📁 Output  : {resolved_output}")
+    click.echo("")
+
+    result = pipeline.run_cover_letters(
+        profile_path=resolved_profile,
+        resume_path=Path(resume_path) if resume_path else None,
+        base_letter_path=resolved_base,
+        output_dir=resolved_output,
+        ai_api_key=ai_key,
+        ai_model=cfg.ai_model,
+        candidate_name=candidate_name,
+        service_account_json=cfg.google_service_account_json if not detect_only else None,
+        drive_folder_id=resolved_drive_folder,
+        produce_docx=produce_docx,
+        limit=limit,
+    )
+
+    click.echo("")
+    click.echo("─" * 45)
+    click.echo("  Cover Letter Summary")
+    click.echo("─" * 45)
+    click.echo(f"  Eligible jobs        :  {result.total_eligible}")
+    click.echo(f"  Already have letter  :  {result.already_have_letter}")
+    click.echo(f"  Requirement detected :  {result.detection_only}")
+    click.echo(f"  Letters generated    :  {result.generated}")
+    click.echo(f"  Uploaded to Drive    :  {result.uploaded}")
+    click.echo(f"  Flagged for review   :  {result.flagged_for_review}")
     if result.dry_run:
         click.echo("  (DRY RUN — no actual writes)")
     click.echo("─" * 45)
